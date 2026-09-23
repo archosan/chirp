@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+set -eu
+
+if ! command -v pnpm >/dev/null 2>&1; then
+	echo "pnpm is required for pre-commit validation." >&2
+	exit 1
+fi
+
+if git diff --cached --quiet; then
+	exit 0
+fi
+
+echo "Checking staged files with Biome..."
+pnpm exec biome check --staged
+
+echo "Typechecking packages affected by staged changes..."
+pnpm exec turbo run typecheck --filter="...[HEAD]"

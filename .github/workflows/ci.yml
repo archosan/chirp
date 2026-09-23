@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate affected packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+
+      - name: Set up pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Select affected package filter
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="origin/${BASE_REF}"
+          else
+            BASE="HEAD^"
+          fi
+
+          echo "TURBO_FILTER=...[$BASE]" >> "$GITHUB_ENV"
+          echo "Using Turbo filter: ...[$BASE]"
+
+      - name: Lint affected packages
+        run: pnpm exec turbo run lint --filter="${TURBO_FILTER}"
+
+      - name: Typecheck affected packages
+        run: pnpm exec turbo run typecheck --filter="${TURBO_FILTER}"
+
+      - name: Unit test affected packages
+        run: pnpm exec turbo run test:unit --filter="${TURBO_FILTER}"
+
+      - name: Build affected packages
+        run: pnpm exec turbo run build --filter="${TURBO_FILTER}"
